@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Folder {
+  id                  String     @id @default(uuid())
+  name                String
+  webdavPath          String     @unique
+  googleDriveFolderId String?
+  parentId            String?
+  parent              Folder?    @relation("FolderToFolder", fields: [parentId], references: [id])
+  children            Folder[]   @relation("FolderToFolder")
+  documents           Document[] @relation("FolderDocuments")
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+}
+
+model Document {
+  id                String    @id @default(uuid())
+  name              String
+  extension         String
+  mimeType          String
+  webdavPath        String    @unique @db.VarChar(1024)
+  googleDriveFileId String?
+  checksum          String
+  size              BigInt
+  lastModified      DateTime
+  syncedAt          DateTime?
+  parentFolderId    String
+  parentFolder      Folder    @relation("FolderDocuments", fields: [parentFolderId], references: [id])
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([webdavPath])
+}
+
+enum SyncJobStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+model SyncJob {
+  id             String        @id @default(uuid())
+  status         SyncJobStatus @default(PENDING)
+  traceId        String        @unique @default(uuid())
+  startedAt      DateTime      @default(now())
+  completedAt    DateTime?
+  filesProcessed Int           @default(0)
+  filesSkipped   Int           @default(0)
+  filesFailed    Int           @default(0)
+  error          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
