@@ -16,7 +16,7 @@ services:
         condition: service_healthy
     volumes:
       - exports_data:/app/exports
-    command: ["node", "dist/src/main.js"]
+    command: ["sh", "-c", "npx prisma migrate deploy && node dist/src/main.js"]
 
   postgres:
     image: postgres:16-alpine

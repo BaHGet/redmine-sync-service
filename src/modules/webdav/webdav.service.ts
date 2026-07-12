@@ -37,7 +37,20 @@ export interface ScanSummary {
 
 export type FolderWithDocuments = Folder & { documents: Document[] };
 
-const ALLOWED_EXTENSIONS = new Set(['.pdf', '.doc', '.docx', '.xlsx']);
+const ALLOWED_EXTENSIONS = new Set([
+  // documents
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+  '.txt', '.csv', '.rtf', '.md', '.odt',
+
+  // images
+  '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.svg', '.webp', '.heic',
+
+  // archives
+  '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+
+  // executables / web packages
+  '.exe', '.msi', '.bat', '.sh', '.jar', '.apk', '.html', '.htm', '.web',
+]);
 const DEFAULT_SCAN_ROOT = '/[documents-repository]/';
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -131,24 +144,30 @@ export class WebdavService {
   ): Promise<void> {
     let contents: FileStat[];
     try {
-      contents = (await this.client.getDirectoryContents(
-        dirPath,
-      )) as FileStat[];
+      // Use encodeURI instead of per-segment encoding because some WebDAV
+      // servers reject certain percent-encodings (e.g. brackets/apostrophes).
+      const requestPath = encodeURI(dirPath);
+      this.logger.debug(
+        { traceId, dirPath, requestPath },
+        'Requesting WebDAV directory',
+      );
+      contents = (await this.client.getDirectoryContents(dirPath)) as FileStat[];
     } catch (err: any) {
       const status: number | undefined = err?.status ?? err?.response?.status;
+      const errText = err?.message ?? String(err);
       if (status === 401 || status === 403) {
         this.logger.error(
-          { traceId, dirPath },
+          { traceId, dirPath, status, err: errText },
           'WebDAV auth failed — check WEBDAV_USERNAME / WEBDAV_PASSWORD',
         );
       } else if (status === 404) {
         this.logger.error(
-          { traceId, dirPath },
+          { traceId, dirPath, status, err: errText },
           'WebDAV path not found — check the supplied path',
         );
       } else {
         this.logger.error(
-          { traceId, dirPath, err: err.message },
+          { traceId, dirPath, status, err: errText },
           'Failed to list WebDAV directory',
         );
       }
@@ -321,7 +340,10 @@ export class WebdavService {
    * its parent. Ensures the parentId chain is intact so sync can build the
    * correct GDrive hierarchy even when scanning a sub-path.
    */
-  private async upsertAncestorFolders(fullPath: string, traceId: string): Promise<void> {
+  private async upsertAncestorFolders(
+    fullPath: string,
+    traceId: string,
+  ): Promise<void> {
     const segments = fullPath.split('/').filter(Boolean);
     if (segments.length === 0) return;
 
@@ -339,9 +361,15 @@ export class WebdavService {
           create: { name: segments[i], webdavPath: path, parentId },
         });
         idMap.set(path, record.id);
-        this.logger.debug({ traceId, path, folderId: record.id }, 'Ancestor folder upserted');
+        this.logger.debug(
+          { traceId, path, folderId: record.id },
+          'Ancestor folder upserted',
+        );
       } catch (err: any) {
-        this.logger.warn({ traceId, path, err: err.message }, 'Failed to upsert ancestor folder');
+        this.logger.warn(
+          { traceId, path, err: err.message },
+          'Failed to upsert ancestor folder',
+        );
       }
     }
   }
